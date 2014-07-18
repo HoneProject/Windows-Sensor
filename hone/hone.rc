@@ -1,0 +1,28 @@
+//----------------------------------------------------------------------------
+// Hone kernel-mode driver version information
+//
+// Copyright (c) 2014 Battelle Memorial Institute
+// Licensed under a modification of the 3-clause BSD license
+// See License.txt for the full text of the license and additional disclaimers
+//
+// Authors
+//   Alexis J. Malozemoff <alexis.malozemoff@pnnl.gov>
+//   Peter L. Nordquist <peter.nordquist@pnnl.gov>
+//   Richard L. Griswold <richard.griswold@pnnl.gov>
+//   Ruslan A. Doroshchuk <ruslan.doroshchuk@pnnl.gov>
+//----------------------------------------------------------------------------
+
+#include <windows.h>
+#include <ntverp.h>
+#include "hone_info.h"
+
+#define VER_FILETYPE             VFT_DRV
+#define VER_FILESUBTYPE          VFT2_DRV_SYSTEM
+#define VER_FILEDESCRIPTION_STR  HONE_DESCRIPTION_STR
+#define VER_INTERNALNAME_STR     HONE_NAME_STR
+#define VER_ORIGINALFILENAME_STR HONE_NAME_STR
+#define VER_FILEVERSION          HONE_VERSION
+#define VER_FILEVERSION_STR      HONE_VERSION_STR
+
+#include "common.ver"
+

@@ -1,0 +1,29 @@
+TARGETNAME=hone
+TARGETPATH=obj
+TARGETTYPE=DRIVER
+
+MSC_WARNING_LEVEL=/W4 /WX
+KMDF_VERSION_MAJOR=1
+
+INCLUDES=\
+	$(DDK_INC_PATH);
+
+TARGETLIBS=\
+	$(DDK_LIB_PATH)\ntoskrnl.lib \
+	$(DDK_LIB_PATH)\ndis.lib \
+	$(DDK_LIB_PATH)\fwpkclnt.lib \
+	$(SDK_LIB_PATH)\uuid.lib \
+	$(SDK_LIB_PATH)\wdmsec.lib
+
+C_DEFINES=$(C_DEFINES) -DUNICODE -D_UNICODE -DKERNEL -DPOOL_NX_OPTIN=1 \
+	-DBINARY_COMPATIBLE=0 -DNT -DNDIS60 -DNDIS_SUPPORT_NDIS6 -DNTDDI_VERSION=0x06010000
+
+SOURCES=..\wfp_common.cpp \
+	debug_print.c \
+	hone.cpp \
+	hone.rc \
+	network_monitor.cpp \
+	process_monitor.cpp \
+	queue_manager.cpp \
+	read_interface.cpp \
+	system_id.cpp

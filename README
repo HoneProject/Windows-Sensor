@@ -1,0 +1,24 @@
+Host-Network (Hone) Packet-Process Correlator for Windows
+
+Copyright (c) 2014 Battelle Memorial Institute
+Licensed under a modification of the 3-clause BSD license
+See License.txt for the full text of the license and additional disclaimers
+
+Author: Richard L. Griswold
+Contributors: Peter L. Nordquist, Ruslan A. Doroshchuk, Alexis J. Malozemoff,
+Brandon J. Carpenter, and Glenn A. Fink
+
+
+H   H  OOO  N   N EEEEE
+H   H O   O NN  N E
+HHHHH O   O N N N EEEE
+H   H O   O N  NN E
+H   H  OOO  N   N EEEEE
+
+
+Hone is a tool for correlating packets to processes to bridge the HOst-NEtwork
+divide. The Hone Packet-Process Correlator for Windows consists of a
+kernel-mode driver that performs packet-process correlation and user-mode
+utilities for reading data collected by the driver and managing the driver.
+For information on building, installing, and using Hone, as well as technical
+information about the inner workings of Hone, see the Readme.html file.

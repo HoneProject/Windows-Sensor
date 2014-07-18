@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Host-Network (Hone) Packet-Process Correlator for Windows</title>
+</head>
+
+<body>
+<h1>Host-Network (Hone) Packet-Process Correlator for Windows</h1>
+
+<p>Copyright &copy; 2014 Battelle Memorial Institute<br />
+Licensed under a modification of the 3-clause BSD license<br />
+See <a href="License.txt">License.txt</a> for the full text of the license and additional disclaimers</p>
+
+<hr />
+
+<h2>Table of Contents</h2>
+
+<ul>
+	<li><a href="#Introduction">Introduction</a>
+	<ul>
+		<li><a href="#HowItWorks">How It Works</a></li>
+	</ul>
+	</li>
+	<li><a href="#SystemRequirements">System Requirements</a></li>
+	<li><a href="#Building">Building</a></li>
+	<li><a href="#Installing">Installing</a></li>
+	<li><a href="#Uninstalling">Uninstalling</a></li>
+	<li><a href="#Using">Using</a>
+		<ul>
+		<li><a href="#ControllingTheDriverService">Controlling the Driver Service</a></li>
+		<li><a href="#ManagingTheDriver">Managing the Driver</a></li>
+		<li><a href="#SettingRingBufferSize">Setting the Driver Ring Buffer Size</a></li>
+		</ul>
+	</li>
+	<li><a href="#Issues">Known Issues</a></li>
+	<li><a href="#Debugging">Debugging</a>
+		<ul>
+		<li><a href="#ViewingDebuggingOutput">Viewing Debugging Output</a></li>
+		<li><a href="#ViewingPoolAllocations">Viewing Pool Allocations</a></li>
+		</ul>
+	</li>
+	<li><a href="#Development">Development</a>
+		<ul>
+		<li><a href="#NetworkMonitor">Network Monitor</a></li>
+		<li><a href="#ProcessMonitor">Process Monitor</a></li>
+		<li><a href="#ReadInterface">Read Interface</a></li>
+		<li><a href="#QueueManager">Queue Manager</a></li>
+		</ul>
+	</li>
+	<li><a href="#Developers">Developers</a></li>
+</ul>
+
+<hr />
+
+<h2><a name="Introduction"></a>Introduction</h2>
+
+<p>When diagnosing anomalous behavior on a network, a system administrator has two separate areas to focus on: the packets
+traveling over the network (i.e., the network view), and the information contained on the individual hosts connected to the network
+(i.e., the host view). The network view provides a glimpse into the overall communication activity of the network, but it does not
+reveal what processes are causing this activity. On the other hand, the host view contains details on the processes producing the
+network traffic, but it does not contain information on which packets are associated with which process. This inability to
+correlate packets with their associated process is a fundamental (although intentional) shortcoming of the modern network stack. To
+bridge this gap we introduce the Hone (Host-network) correlator, an open-source tool that correlates packets to processes to
+diagnose problems seen on a network.</p>
+
+<p>While the idea of correlating packets to processes is a simple one, the implementation requires kernel modifications that alter
+the way the network stack works. While there have been several tools that can do a form of the packet-process correlation approach
+taken here, they differ from Hone in fundamental ways. Discussions of these tools and their differences from Hone can be found
+in:</p>
+
+<blockquote>FINK, G., DUGGIRALA, V., CORREA, R., AND NORTH, C. Bridging the host-network divide: survey, taxonomy, and solution. In
+Proceedings of the 20th Large Installation System Administration Conference (2006), pp. 247-262.</blockquote>
+
+<h3><a name="HowItWorks"></a>How It Works</h3>
+
+<p>The Host-Network (Hone) Packet-Process Correlator for Windows consists of a kernel-mode driver that performs packet-process
+correlation and user-mode utilities for reading data collected by the driver and managing the driver. Hone consists of the
+following components:</p>
+
+<ul>
+	<li>A kernel-mode driver, <tt>hone.sys</tt>, that collects the following network and process data from the system in an <a
+		href="https://github.com/HoneProject/Linux-Sensor/wiki/Augmented-PCAP-Next-Generation-Dump-File-Format">augmented PCAP-NG</a>
+		format:
+		<ul>
+			<li>Process start and end events</li>
+			<li>Network connection open and close events</li>
+			<li>Inbound and outbound packet headers and data, correlated with the process sending or receiving the packet</li>
+		</ul>
+		For more detailed information on the sensor's functionality, see the <a
+		href="https://github.com/HoneProject/Linux-Sensor/wiki/Hone-sensor-requirements-tiers">Sensor Requirements Tiers</a>. The
+		Windows sensor is compatible with Tier 4 of these requirements, with the exceptions noted under <a href="#Issues">Known
+		Issues</a>.</li>
+	<li>A management utility, <tt>honeutil</tt>, that provides additional functionality required by the kernel-mode driver:
+		<ul>
+			<li>Reading data collected by the driver as PCAP-NG blocks and writing the blocks to files that can be read by other tools
+				such as Wireshark</li>
+			<li>Reporting driver statistics</li>
+			<li>Installation and removal of the network filters used by the driver</li>
+			<li>Sending a list of previously opened connections to the driver</li>
+		</ul>
+</ul>
+
+<p>Similar functionality is also available for Linux using the <a href="https://github.com/HoneProject/Linux-Sensor">Hone)
+Packet-Process Correlator for Linux</a>.</p>
+
+<hr />
+
+<h2><a name="SystemRequirements"></a>System Requirements</h2>
+
+<p>The minimum system requirements for running Hone are:</p>
+
+<ul>
+	<li>Windows 7 or Windows Server 2008 R2 and later</li>
+	<li>32-bit or 64-bit x86 processor</li>
+	<li>Wired or wireless networking</li>
+	<li>Sufficient free drive space for saving data collected by the driver (up to several GB)</li>
+</ul>
+
+<p>Requirements may be higher for systems used to build Hone.</p>
+
+<hr />
+
+<h2><a name="Building"></a>Building</h2>
+
+<p>The following software must be installed in order to build Hone:</p>
+
+<dl>
+	<dt><a href="https://www.microsoft.com/en-us/download/details.aspx?id=11800">Windows Driver Kit (WDK) v7.1.0.7600</a></dt>
+	<dd>Used to build the kernel-mode driver and user-mode program</dd>
+
+	<dt><a href="http://www.activestate.com/activepython/downloads">Python 2.7</a></dt>
+	<dd>Used to run the build script</dd>
+
+	<dt><a href="http://www.jrsoftware.org/isinfo.php">Inno Setup 5.5</a></dt>
+	<dd>Used to create the installer executable</dd>
+</dl>
+
+<p>Prior to building Hone, you need a digital certificate to sign the driver files. For a test environment, you can create a
+self-signed certificate, but for a production environment, you will need a valid signing certificate. To create a self-signed
+certificate using <tt>makecert</tt> and <tt>pvk2pfx</tt> from the WDK, run the following commands:</p>
+
+<pre>
+	makecert -r -pe -n "CN=My CA" -a sha1 -cy authority -sky signature -sv MyCA.pvk MyCA.cer
+	makecert -pe -n "CN=My SPC" -a sha1 -cy end -sky signature -ic MyCA.cer -iv MyCA.pvk -sv MySPC.pvk MySPC.cer
+	pvk2pfx -pvk MySPC.pvk -spc MySPC.cer -pfx Hone.pfx -po changeit</pre>
+
+<p>When <tt>makecert</tt> prompts for a password, leave the password fields blank and click <tt>OK</tt>. When it asks if you want
+to continue without password protection, click <tt>Yes</tt>. When the commands finish, copy <tt>Hone.pfx</tt> into the
+<tt>installer</tt> directory.</p>
+
+<p>To build the Hone installer, open a command window with Administrator privileges, change to the directory that contains the Hone
+source code, and run the following command:</p>
+
+<pre>
+	build.py -v VERSION -c CERT_FILE</pre>
+
+Where <i>VERSION</i> is the version number to use for the build and <i>CERT_FILE</i> is the digital certificate to use to sign the
+driver files. <i>Do not</i> run the script from a WDK build environment, since the script automatically sets the build environment
+as needed. The script will build Hone for 32-bit and 64-bit platforms. To get help for the various build options, run:
+
+<pre>
+	build.py -h</pre>
+
+
+<p>The build script places the files in the <tt>hone_<i>VERSION</i>_debug</tt> or <tt>hone_<i>VERSION</i>_release</tt> directory,
+depending on whether you perform as debug or release build, where <i>VERSION</i> is the version number passed to the build script.
+The script will use Inno Setup to create an installer, and, if successful, it will place an installer executable named
+<tt>Hone-<i>VERSION</i>-win7.exe</tt> in the <tt>installers</tt> subdirectory. It will also place the debugging symbols in the
+<tt>debug_symbols</tt> subdirectory.</p>
+
+<hr />
+
+<h2><a name="Installing"></a>Installing</h2>
+
+<p>To install Hone, follow these steps:</p>
+
+<ol>
+	<li><p><i>Enable test-signing mode:</i> If you use a self-signed certificate to sign the driver, you will need to enable
+		test-signing mode. To enable test-signing mode, open an Administrator command prompt and run:</p>
+
+<pre>
+	bcdedit -set TESTSIGNING ON</pre>
+
+		<p><b>WARNING: In test-signing mode, the system will allow the installation of any signed driver, including other drivers
+		signed using a &ldquo;self-signed&rdquo; certificate.</b></p>
+
+		<p>After enabling test-signing mode, reboot the system. After the system boots, you should see the words &ldquo;Test
+		Mode&rdquo; in the lower right corner of the screen.</p></li>
+
+	<li><p><i>Run the installer:</i> Double-click on the installer file to run the installer, and follow the prompts.</p></li>
+
+	<li><p><i>Accept the license agreement:</i> Check the box to indicate that you accept the terms of the license agreement.</p></li>
+
+	<li><p><i>Start the install:</i> Click the Install button to start the installation. Depending on the user and system settings,
+		the system may show a User Account Control (UAC) prompt, or it may prompt you to enter the password for a user with
+		Administrator access.</p></li>
+
+	<li><p><i>Wait while the software installs:</i> The installer will take a few minutes to copy the files and finish the
+		installation. It will copy the kernel-mode driver to <tt>%SystemRoot%\System32\drivers</tt> and the management utility to
+		<tt>%ProgramFiles%\PNNL\Hone</tt>.
+
+		<p>The installer will automatically run the management utility with the <tt>-i</tt> option to install the filters that the
+		driver uses. The filters must be installed for the driver to operate properly. Since the driver cannot install the filters on
+		its own during system boot, it relies on the management utility to install the filters ahead of time.</p></li>
+
+	<li><p><i>Finish the install:</i> Once the install finishes, the Hone driver will be installed and the software will be ready to
+		use.</p></li>
+</ol>
+
+<hr />
+
+<h2><a name="Uninstalling"></a>Uninstalling</h2>
+
+<p>To uninstall Hone, click <tt>Start</tt> &rarr; <tt>All Programs</tt> &rarr; <tt>PNNL</tt> &rarr; <tt>Hone</tt> &rarr;
+<tt>Uninstall Hone</tt> or <tt>Programs and Features</tt> in the Control Panel.</p>
+
+<hr />
+
+<h2><a name="Using"></a>Using</h2>
+
+<p>The Hone driver should automatically start during the installation process, as well as whenever the system boots. However, the
+driver only collects data when a reader is attached to it. To read the data collected by the driver, click <tt>Start</tt> &rarr;
+<tt>All Programs</tt> &rarr; <tt>PNNL</tt> &rarr; <tt>Hone</tt> &rarr; <tt>Hone Reader</tt>. You can also open a Hone command
+prompt by clicking <tt>Start</tt> &rarr; <tt>All Programs</tt> &rarr; <tt>PNNL</tt> &rarr; <tt>Hone</tt> &rarr; <tt>Hone Command
+Prompt</tt> and running the following command:</p>
+
+<pre>
+	honeutil read</pre>
+
+<p>The reader will save the data in <a
+href="https://github.com/HoneProject/Linux-Sensor/wiki/Augmented-PCAP-Next-Generation-Dump-File-Format">augmented PCAP-NG</a>
+formatted files that can be read by tools such as Wireshark. To see the additional fields in the augmented PCAP-NG files, you will
+need a <a href="https://github.com/HoneProject/Wireshark-Shim/wiki/Hone-Enhanced-Wireshark">Hone-enabled version of Wireshark.</a>
+There is also a <a href="https://github.com/HoneProject/Wireshark-Shim">Wireshark shim</a> available for viewing Hone data in
+near-real-time using the Hone-enabled version of Wireshark.</p>
+
+<p>If you press <tt>CTRL-BREAK</tt>, the utility will close the current file and open a new one, and if you press <tt>CTRL-C</tt>,
+the utility will close the current file and exit. If you specify the <tt>-v</tt> option when starting the utility, it will print
+more verbose status messages.</p>
+
+<h3><a name="ControllingTheDriverService"></a>Controlling the Driver Service</h3>
+
+<p>In some cases, you may wish to suspend collection of data by the Hone driver, or you may wish to restart the driver service. The
+following table lists the commands used to control the Hone driver service. Note that the driver service will not stop while there
+are readers attached to the driver.</p>
+
+<table border="1" cellspacing="0" cellpadding="3">
+	<tr><th>    Command           </th><th>Description                 </th></tr>
+	<tr><td><tt>sc stop hone </tt></td><td>Stop the Hone driver        </td></tr>
+	<tr><td><tt>sc start hone</tt></td><td>Start the Hone driver       </td></tr>
+	<tr><td><tt>sc query hone</tt></td><td>Query the Hone driver status</td></tr>
+</table>
+
+<h3><a name="ManagingTheDriver"></a>Managing the Driver</h3>
+
+<p>The Hone management utility, <tt>honeutil</tt>, provides additional
+functionality required by the kernel-mode driver. You can run <tt>honeutil
+-h</tt> to get detailed help for the management utility.</p>
+
+<table border="1" cellspacing="0" cellpadding="3">
+	<tr><th>    Command                 </th><th>Description                                     </th></tr>
+	<tr><td><tt>honeutil read      </tt></td><td>Read data collected by the Hone driver          </td></tr>
+	<tr><td><tt>honeutil send-conns</tt></td><td>Send list of open connections to the Hone driver</td></tr>
+	<tr><td><tt>honeutil get-stats </tt></td><td>Get statistics from the Hone driver             </td></tr>
+	<tr><td><tt>honeutil install   </tt></td><td>Install the Hone driver network filters         </td></tr>
+	<tr><td><tt>honeutil uninstall </tt></td><td>Uninstall the Hone driver network filters       </td></tr>
+</table>
+
+<p>If you manually stop and start the Hone driver using the commands listed in the previous section, you need to run <tt>honeutil
+send-conns</tt> to send the list of currently open connections to the driver. This allows the driver to properly correlate packets
+for connections that were opened before the driver started. You do not need to do this in normal operation.</p>
+
+<p>You can also use the management utility to show a report of the current driver statistics, such as the driver version, driver
+uptime, number of packets captured, and so on, by running <tt>honeutil get-stats</tt>. There are a couple of things to keep in mind
+when viewing this report. First, zero indicates an unlimited snap length (snap length is the maximum amount of packet data the
+driver will capture). Second, the number of connection close events may exceed the number of connection open events, since the
+operating system can generate multiple events when a connection closes.</p>
+
+<p>The management utility also has two other commands, <tt>install</tt> and <tt>uninstall</tt> that are used to install and
+uninstall the network filters used by the Hone driver. The installer uses the management utility to perform these operations when
+installing and uninstalling the driver. They should not be needed at other times.</p>
+
+<h3><a name="SettingRingBufferSize"></a>Setting the Driver Ring Buffer Size</h3>
+
+<p>Internally, the Hone driver uses ring buffers to temporarily store the data it collects until the management utility can read
+it. The ring buffers use memory from non-paged pool, which may be a scarce resource on some systems. The driver allows
+administrators to adjust the amount of memory it uses for these buffers so that administrators on systems with limited amounts of
+memory can free up more memory, and administrators on heavily loaded systems can buffer more events. To change the size of the ring
+buffers, open a Hone command prompt by clicking <tt>Start</tt> &rarr; <tt>All Programs</tt> &rarr; <tt>PNNL</tt> &rarr;
+<tt>Hone</tt> &rarr; <tt>Hone Command Prompt</tt>, and run the following command:</p>
+
+<pre>
+	reg add "HKLM\SOFTWARE\PNNL\Hone" /v RingBufferSize /t REG_DWORD /d <i>SIZE</i></pre>
+
+<p>Note that the driver will continue to use the old ring buffer size for any programs that are currently reading data from the
+driver. It will use the new ring buffer size for any new programs that connect to it.</p>
+
+<p>The following tables gives information on the minimum, default, and maximum values for the ring buffer size, as well as the
+number of PCAP-NG blocks the driver can store on the ring buffer for 32-bit and 64-bit systems:</p>
+
+<table border="1" cellspacing="0" cellpadding="3">
+	<tr><th rowspan="2">Setting</th><th rowspan="2">Size</th><th colspan="2">Number of PCAP-NG Blocks</th></tr>
+	<tr>                                          <th>32-bit Systems</th><th>64-bit Systems</th></tr>
+	<tr><td>Minimum</td><td>1024             </td><td>256           </td><td>128           </td></tr>
+	<tr><td>Default</td><td>16384 (4 pages)  </td><td>4096          </td><td>2048          </td></tr>
+	<tr><td>Maximum</td><td>131072 (32 pages)</td><td>32768         </td><td>16384         </td></tr>
+</table>
+
+<hr />
+
+<h2><a name="Issues"></a>Known Issues</h2>
+
+<p>The Hone Packet-Process Correlator for Windows is compliant with tiers 1 through 4 of the <a
+href="https://github.com/HoneProject/Linux-Sensor/wiki/Hone-sensor-requirements-tiers">Sensor Requirements Tiers</a>, with the
+following known issues:</p>
+
+<ul>
+	<li>The sensor does not sort the PCAP-NG blocks for running processes and open connections at the beginning of a log file
+		properly, so they may not be in strict order by timestamp.</li>
+
+	<li><p>The sensor correlates ICMP packets to the process that is handling the packets, but that process in most cases is the
+		SYSTEM process (PID 4). When a program uses the Windows operating system ICMP APIs, such as the <a
+		href="http://msdn.microsoft.com/en-us/library/aa366050.aspx">IcmpSendEcho</a> API, a kernel-mode driver is responsible for
+		sending and receiving the ICMP packets on behalf of the program. Since all kernel-mode drivers in Windows are hosted by the
+		SYSTEM process, the Hone sensor will correlate these ICMP packets to the SYSTEM process. Windows does not provide any mechanism
+		to determine which driver in the SYSTEM process is actually sending or receiving the packets.</p>
+
+		<p>If the process bypasses the Windows operating system ICMP APIs and creates its own ICMP packets, the Hone sensor will be
+		able to correlate the ICMP packets with the process. However, most processes use the Windows operating system ICMP APIs, so the
+		Hone sensor will correlate most ICMP packets to the SYSTEM process.</p></li>
+
+	<li>The sensor does not compute the checksum for outbound ICMP packets after creating the IP header.</li>
+</ul>
+
+<hr />
+
+<h2><a name="Debugging"></a>Debugging</h2>
+
+<p>The development team has tested Hone extensively to help ensure the system operates correctly when Hone is running. However, in
+the case that an undetected bug in the driver causes the system to crash, don't panic! If the crash occurs during system boot, you
+can boot into safe mode and run <tt>sc delete hone</tt> to disable the Hone driver and regain access to your machine. However, it
+would be greatly beneficial to the developers if you kindly notify us of such a failure by opening an <a
+href="https://github.com/HoneProject/Windows-Sensor/issues">issue</a>.  If possible, please provide the memory dump, which is
+usually found in <tt>%SystemRoot%\Minidump\*.DMP</tt> on reboot after a failure.</p>
+
+<h3><a name="ViewingDebuggingOutput"></a>Viewing Debugging Output</h3>
+
+<p>The checked (debug) build of the driver prints several debug messages to help track the flow of execution. You can view these
+messages by either running the <a href="http://technet.microsoft.com/en-us/sysinternals/bb896647.aspx">debug view utility</a> in
+the system where the Hone driver is installed, or by attaching a debugger to the system.</p>
+
+<p>In order to see the debug messages, you must first enable them. You can either change a value in the registry, or, if you are
+using a debugger, run a command from inside the debugger. To change the registry value, open a Hone command prompt by clicking
+<tt>Start</tt> &rarr; <tt>All Programs</tt> &rarr; <tt>PNNL</tt> &rarr; <tt>Hone</tt> &rarr; <tt>Hone Command Prompt</tt>, and run
+the following command:</p>
+
+<pre>
+	reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Debug Print Filter" /v IHVDRIVER /t REG_DWORD /d <i>MASK</i></pre>
+
+<p>You will need to reboot the system after adding the registry key for the changes to take effect. The following table shows which
+mask values to use to enable the different debug levels:</p>
+
+<table border="1" cellspacing="0" cellpadding="3">
+	<tr><th>Message level</th><th>Bit mask</th></tr>
+	<tr><td>Error        </td><td>0x01    </td></tr>
+	<tr><td>Warning      </td><td>0x02    </td></tr>
+	<tr><td>Information  </td><td>0x04    </td></tr>
+	<tr><td>Verbose      </td><td>0x08    </td></tr>
+	<tr><td>Lock Status  </td><td>0x10    </td></tr>
+</table>
+
+<p>For example, to view warning and informational messages while ignoring verbose and lock status message, use a mask of
+<tt>0x06</tt>. Note that error messages are always shown, no matter what the mask value is set to.</p>
+
+<p>If you are using a debugger, you can run the following command from inside the debugger to temporarily enable debug messages for
+the specified mask:</p>
+
+<pre>
+	ed nt!Kd_IHVDRIVER_Mask <i>MASK</i></pre>
+
+<p>If you get an error that the debugger cannot resolve the <tt>nt!Kd_IHVDRIVER_Mask</tt> symbol, make sure that your symbol path
+is <a href="http://support.microsoft.com/kb/311503">set correctly</a>, and run the following commands:</p>
+
+<pre>
+	.symfix
+	.reload /f nt</pre>
+
+<h3><a name="ViewingPoolAllocations"></a>Viewing Pool Allocations</h3>
+
+<p>You can view driver pool allocations using the <a href="http://msdn.microsoft.com/en-us/library/ff550442.aspx">poolmon</a>
+program included in the WDK:</p>
+
+<ul>
+	<li><b>32-bit:</b> C:\WinDDK\7600.16385.1\tools\Other\amd64\poolmon.exe</li>
+	<li><b>64-bit:</b> C:\WinDDK\7600.16385.1\tools\Other\i386\poolmon.exe</li>
+</ul>
+
+<p>Copy the appropriate version of <tt>poolmon</tt> to the system where the Hone driver is installed, and run it as follows:</p>
+
+<pre>
+	poolmon -iHone -iHoNg -iHoNl -iHoPg -iHoPl -iHoQb -iHoQc -iHoQi -iHoQk -iHoQo -iHoQp -iHoQr -iHoQs -iHoRl</pre>
+
+<p>Start the driver, perform some tests, and stop the driver. If the differences between allocations and frees for a pool tag is
+not zero, then the driver is leaking memory. The following table shows how the driver uses each tag:</p>
+
+<table border="1" cellspacing="0" cellpadding="3">
+<tr><th>Tag </th><th>Component      </th><th>Usage                              </th></tr>
+<tr><td>Hone</td><td>Core Driver    </td><td>General pool data                  </td></tr>
+<tr><td>HoNg</td><td>Network monitor</td><td>General pool data                  </td></tr>
+<tr><td>HoNl</td><td>Network monitor</td><td>Lookaside list                     </td></tr>
+<tr><td>HoPg</td><td>Process monitor</td><td>General pool data                  </td></tr>
+<tr><td>HoPl</td><td>Process monitor</td><td>Lookaside list                     </td></tr>
+<tr><td>HoQb</td><td>Queue manager  </td><td>Block nodes                        </td></tr>
+<tr><td>HoQc</td><td>Queue manager  </td><td>Connection block buffers           </td></tr>
+<tr><td>HoQi</td><td>Queue manager  </td><td>Interface description block buffers</td></tr>
+<tr><td>HoQk</td><td>Queue manager  </td><td>Packet block buffers               </td></tr>
+<tr><td>HoQo</td><td>Queue manager  </td><td>Open connection nodes              </td></tr>
+<tr><td>HoQp</td><td>Queue manager  </td><td>Process block buffers              </td></tr>
+<tr><td>HoQr</td><td>Queue manager  </td><td>Ring buffer                        </td></tr>
+<tr><td>HoQs</td><td>Queue manager  </td><td>Section header block buffers       </td></tr>
+<tr><td>HoRl</td><td>Read interface </td><td>Lookaside list                     </td></tr>
+</table>
+
+<hr />
+
+<h2><a name="Development"></a>Development</h2>
+
+The Hone driver consists of four modules:
+
+<ol>
+	<li><b>Network monitor:</b> Monitors connection events and captures packet data</li>
+	<li><b>Process monitor:</b> Monitors process start and end events</li>
+	<li><b>Read interface:</b> Provides read interface for user-mode programs</li>
+	<li><b>Queue manager:</b> Provides queues for PCAP-NG blocks collected by other modules</li>
+</ol>
+
+<h3><a name="NetworkMonitor"></a>Network Monitor</h3>
+
+<p>This module uses the Windows Filtering Platform (WFP) to track connections and capture data for incoming and outgoing packets.
+It sends these blocks to the queue manager.</p>
+
+<p>This driver relies on WFP support that is only available starting with Windows 7 and Windows Server 2008 R2. Even though Windows
+Vista and Windows Server 2008 include support for WFP, these versions do not have the WFP callouts needed by the driver. Earlier
+version of Windows do not include any support for WFP.</p>
+
+<p>The network monitor registers IPv4 and IPv6 callouts at the following layers to capture connection open and close events:</p>
+
+<ul>
+	<li>ALE_AUTH_CONNECT</li>
+	<li>ALE_AUTH_RECV_ACCEPT</li>
+	<li>ALE_ENDPOINT_CLOSURE</li>
+	<li>ALE_RESOURCE_ASSIGNMENT</li>
+	<li>ALE_RESOURCE_RELEASE</li>
+</ul>
+
+<p>It also registers IPv4 and IPv6 callouts at the following layers to capture packet data:</p>
+
+<ul>
+	<li>INBOUND_TRANSPORT</li>
+	<li>OUTBOUND_TRANSPORT</li>
+</ul>
+
+<p>Helpful development links:</p>
+
+<ul>
+	<li><a href="http://www.osronline.com/article.cfm?id=295">Getting DbgPrint messages to show up in the debugger</a> (see
+		<a href="#ViewingDebuggingOutput">Viewing Debugging Output</a> for step-by-step instructions)</li>
+	<li><a href="http://msdn.microsoft.com/en-us/library/windows/hardware/ff571064.aspx">WFP Layer Requirements and
+		Restrictions</a></li>
+	<li><a href="http://msdn.microsoft.com/en-us/library/windows/hardware/ff546324.aspx">Data Offset Positions</a></li>
+	<li><a href="http://msdn.microsoft.com/en-us/library/ff569977.aspx">Packet Modification Examples</a></li>
+</ul>
+
+<h3><a name="ProcessMonitor"></a>Process Monitor</h3>
+
+<p>This module tracks process start and exit events. Upon initialization, it gathers information about all currently running
+processes. It then tracks whenever processes start, end, or load an image, and it sends these events in PCAP-NG blocks to the queue
+manager.</p>
+
+<h3><a name="ReadInterface"></a>Read Interface</h3>
+
+<p>This module provides a read interface for user-mode programs on &ldquo;\\.\HoneOut&rdquo;. The module supports an unlimited
+number of simultaneous readers.</p>
+
+<p>The driver also supports a number of IOCTLs to control its behavior:</p>
+
+<table border="1" cellspacing="0" cellpadding="3">
+	<tr><th>IOCTL</th><th>Description</th><th>Input</th><th>Output</th></tr>
+	<tr>
+		<td>IOCTL_HONE_MARK_RESTART</td>
+		<td>Tells the driver to stop at the end of the next PCAP-NG block. The next read will return a length of 0 to let the user-mode
+			program know that it has finished reading a complete block so it can safely close its output file.</td>
+		<td>None</td>
+		<td>None</td>
+	</tr>
+	<tr>
+		<td>IOCTL_HONE_FILTER_CONNECTION</td>
+		<td>Tells the driver to filter all packets for the specified connection ID. Filtering is done on a per-reader basis, so each
+			reader can filter packets for a different connection ID. Since the driver expects a connection ID rather than a socket,
+			programs can use the SIO_QUERY_WFP_ALE_ENDPOINT_HANDLE Windows Socket API IOCTL to get the connection ID.</td>
+		<td>32-bit connection ID</td>
+		<td>None</td>
+	</tr>
+	<tr>
+		<td>IOCTL_HONE_SET_SNAP_LENGTH</td>
+		<td>Sets the number of bytes of packet data that the driver will provide to the user-mode program. If the snap length is set to
+			0, the driver will provide all available packet data. For space and processing efficiency, the driver uses the maximum snap
+			length for all readers to determine how many bytes to save internally, but it gives each reader the number of bytes that
+			reader has specified.</td>
+		<td>32-bit snap length</td>
+		<td>None</td>
+	</tr>
+	<tr>
+		<td>IOCTL_HONE_GET_SNAP_LENGTH</td>
+		<td>Returns the current snap length for the reader.</td>
+		<td>None</td>
+		<td>32-bit snap length</td>
+	</tr>
+	<tr>
+		<td>IOCTL_HONE_SET_DATA_EVENT_32 and IOCTL_HONE_SET_DATA_EVENT_64</td>
+		<td><p>Provides an event to the driver that it can set whenever there is data for the user-mode program to read. If there is no
+			data available when a program reads from the driver, the driver returns immediately without blocking. If the program does not
+			want to poll the driver, it can register an event that the driver will set whenever it enqueues data on an empty reader queue.
+			The program then reads until it gets a zero, indicating there is no more data available, and waits on the event. When the
+			driver sets the event, the program wakes up and can continue the cycle.</p>
+
+			<p>32-bit programs must use IOCTL_HONE_SET_DATA_EVENT_32 and 64-bit programs must use IOCTL_HONE_SET_DATA_EVENT_64 so the
+			driver knows what size to expect for the event handle. 32-bit programs will work properly with the 64-bit driver.</p></td>
+		<td>32-bit <i>or</i> 64-bit event handle</td>
+		<td>None</td>
+	</tr>
+	<tr>
+		<td>IOCTL_HONE_SET_OPEN_CONNECTIONS</td>
+		<td>Passes a list of currently open connections to the driver. Since the kernel-mode driver does not have access to user-mode
+			APIs, it is unable to get the list of currently open connections when it is loaded. This is not a problem if the driver is
+			loaded at boot time before any connections are opened, but it can cause the driver to incorrectly correlate packets if the
+			driver is loaded after the system boots (for example, when the driver is initially installed).</td>
+		<td>A CONNECTIONS structure containing open connection information</td>
+		<td>None</td>
+	</tr>
+	<tr>
+		<td>IOCTL_HONE_GET_STATISTICS</td>
+		<td>Gets driver statistics such as driver version, uptime, packets captured, etc.</td>
+		<td>None</td>
+		<td>A STATISTICS structure containing driver statistics</td>
+	</tr>
+</table>
+
+<p>Helpful development links:</p>
+
+<ul>
+	<li><a href="http://msdn.microsoft.com/en-us/library/windows/desktop/aa363216.aspx">DeviceIoControl API</a></li>
+	<li><a href="http://msdn.microsoft.com/en-us/library/windows/desktop/ms741621.aspx">Windows socket IOCTL API</a></li>
+</ul>
+
+<h3><a name="QueueManager"></a>Queue Manager</h3>
+
+<p>This module stores PCAP-NG blocks until the user-mode programs can read them. It also tracks connections and processes so it can
+perform packet/process correlation and so that it can provide a list open connections and running processes to user-mode programs
+when they first connect to the driver.</p>
+
+<hr />
+
+<h2><a name="Developers"></a>Developers</h2>
+
+<p>Hone was developed at Pacific Northwest National Laboratory by:</p>
+
+<ul>
+	<li>Richard L. Griswold</li>
+	<li>Peter L. Nordquist</li>
+	<li>Ruslan A. Doroshchuk</li>
+	<li>Alexis J. Malozemoff</li>
+	<li>Brandon J. Carpenter</li>
+</ul>
+
+</body>
+</html>

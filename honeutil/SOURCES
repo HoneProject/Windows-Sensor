@@ -1,0 +1,28 @@
+TARGETNAME=honeutil
+TARGETPATH=obj
+TARGETTYPE=PROGRAM
+
+MSC_OPTIMIZATION = /Od /Oi
+MSC_WARNING_LEVEL=/W4 /WX
+
+SXS_APPLICATION_MANIFEST=honeutil.manifest
+
+UMTYPE=console
+UMENTRY=main
+USE_MSVCRT=1
+
+TARGETLIBS=\
+	$(DDK_LIB_PATH)\fwpuclnt.lib \
+	$(DDK_LIB_PATH)\iphlpapi.lib \
+	$(DDK_LIB_PATH)\uuid.lib
+
+C_DEFINES=$(C_DEFINES) -D_MBCS -DNTDDI_VERSION=0x06010000
+
+SOURCES=..\wfp_common.cpp \
+	common.cpp \
+	filters.cpp \
+	honeutil.cpp \
+	honeutil.rc \
+	oconn.cpp \
+	read.cpp \
+	stats.cpp
