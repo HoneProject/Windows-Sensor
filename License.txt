@@ -1,6 +1,6 @@
 The Hone (Host-Network) Packet-Process Correlator for Windows
 
-Copyright (c) 2014, Battelle Memorial Institute
+Copyright (c) 2014-2015, Battelle Memorial Institute
 All rights reserved.
 
 1. Redistribution and use in source and binary forms, with or without

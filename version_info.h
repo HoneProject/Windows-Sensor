@@ -1,7 +1,7 @@
 //----------------------------------------------------------------------------
 // Hone (Host-Network) Packet-Process Correlator version information
 //
-// Copyright (c) 2014 Battelle Memorial Institute
+// Copyright (c) 2014-2015 Battelle Memorial Institute
 // Licensed under a modification of the 3-clause BSD license
 // See License.txt for the full text of the license and additional disclaimers
 //
@@ -21,7 +21,7 @@
 #include "version.h"
 #define HONE_PRODUCTNAME_STR     "Hone (Host-Network) Packet-Process Correlator"
 #define HONE_COMPANYNAME_STR     "Pacific Northwest National Laboratory"
-#define HONE_LEGALCOPYRIGHT_STR  "Copyright \251 2014 Battelle Memorial Institute"
+#define HONE_LEGALCOPYRIGHT_STR  "Copyright \251 2014-2015 Battelle Memorial Institute"
 
 #ifdef RC_INVOKED
 

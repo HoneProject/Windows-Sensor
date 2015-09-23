@@ -250,16 +250,17 @@ struct PCAP_NG_SECTION_HEADER {
 // contain all of it.  Otherwise, it is in the buffer pointed to by Buffer.
 typedef bool _Bool;
 struct BLOCK_NODE {
-	LLRB_ENTRY(BLOCK_NODE) TreeEntry;   // LLRB tree entry
-	LIST_ENTRY             ListEntry;   // Doubly-linked list of blocks
-	LONG                   RefCount;    // Block reference count
-	UINT32                 BlockType;   // Block type to aid in debugging
-	UINT32                 BlockLength; // Block data length in bytes
-	UINT32                 PrimaryId;   // Process or connection ID for sorting
-	UINT32                 SecondaryId; // Connection ID for packet blocks and process ID for connection blocks
-	LARGE_INTEGER          Timestamp;   // Block timestamp in milliseconds since 1970-01-01
-	char                  *Buffer;      // Buffer to use if this block isn't large enough, NULL otherwise
-	char                   Data[512];   // Block data
+	LLRB_ENTRY(BLOCK_NODE) TreeEntry;    // LLRB tree entry
+	LIST_ENTRY             ListEntry;    // Doubly-linked list of blocks
+	LONG                   RefCount;     // Block reference count
+	UINT32                 BlockType;    // Block type to aid in debugging
+	UINT32                 BlockLength;  // Block data length in bytes
+	UINT32                 SortId;       // Process or connection ID for sorting
+	UINT32                 ConnectionId; // Connection ID (0 if none)
+	UINT32                 ProcessId;    // Process ID (0xFFFFFFFF if none, since 0 is a valid PID)
+	LARGE_INTEGER          Timestamp;    // Block timestamp in milliseconds since 1970-01-01
+	char                  *Buffer;       // Buffer to use if this block isn't large enough, NULL otherwise
+	char                   Data[512];    // Block data
 };
 
 // Information about a registered reader

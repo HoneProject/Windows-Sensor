@@ -89,6 +89,7 @@ BLOCK_NODE* AllocateBlockNode(
 
 	// Zero block node header, but not the data
 	RtlZeroMemory(blockNode, sizeof(BLOCK_NODE) - sizeof(blockNode->Data));
+	blockNode->ConnectionId = 0xFFFFFFFF;
 
 	// Allocate separate data buffer if the block node isn't large enough to
 	// hold all of the data
@@ -166,7 +167,7 @@ void CleanupRingBuffer(__in RING_BUFFER *buffer)
 //----------------------------------------------------------------------------
 int CompareBlockNodes(BLOCK_NODE *first, BLOCK_NODE *second)
 {
-	return first->PrimaryId - second->PrimaryId;
+	return first->SortId - second->SortId;
 }
 
 //----------------------------------------------------------------------------
@@ -434,9 +435,10 @@ BLOCK_NODE* GetConnectionBlock(
 		return NULL;
 	}
 
-	blockNode->BlockType   = ConnectionBlock;
-	blockNode->PrimaryId   = connectionId;
-	blockNode->SecondaryId = processId;
+	blockNode->BlockType    = ConnectionBlock;
+	blockNode->SortId       = connectionId;
+	blockNode->ConnectionId = connectionId;
+	blockNode->ProcessId    = processId;
 
 	// Use the supplied timestamp, even if it is zero (which may be the case
 	// when the timestamp was supplied in a list of open connections)
@@ -557,7 +559,8 @@ BLOCK_NODE* GetProcessBlock(
 	}
 
 	blockNode->BlockType = ProcessBlock;
-	blockNode->PrimaryId = pid;
+	blockNode->SortId    = pid;
+	blockNode->ProcessId = pid;
 	if (timestamp) {
 		ConvertKeTime(timestamp, &blockNode->Timestamp);
 	} else {
@@ -609,13 +612,13 @@ UINT32 GetProcessIdForConnectionId(
 	BLOCK_NODE          searchNode;
 	KLOCK_QUEUE_HANDLE  lockHandle;
 
-	searchNode.PrimaryId = connectionId;
+	searchNode.SortId = connectionId;
 	DBGPRINT(D_LOCK, "Acquiring trees lock at %d", __LINE__);
 	KeAcquireInStackQueuedSpinLock(&gTreesLock, &lockHandle);
 
 	blockNode = LLRB_FIND(BlockTree, &gConnTreeHead, &searchNode);
 	if (blockNode) {
-		processId = blockNode->SecondaryId;
+		processId = blockNode->ProcessId;
 	} else {
 		// Try to find the connection in the previously opened connections trees
 		OCONN_TREE_HEAD *treeHead;
@@ -752,7 +755,8 @@ BLOCK_NODE* GetSectionHeaderBlock(void)
 		char   *str       = os;
 		size_t  remaining = sizeof(os);
 		char   *osName    = NULL;
-		if (versionInfo.dwMajorVersion == 6) {
+		switch (versionInfo.dwMajorVersion) {
+		case 6:
 			switch (versionInfo.dwMinorVersion) {
 			case 1:
 				osName = (versionInfo.wProductType == 1) ?
@@ -768,6 +772,17 @@ BLOCK_NODE* GetSectionHeaderBlock(void)
 			default:
 				break;
 			}
+			break;
+		case 10:
+			switch (versionInfo.dwMinorVersion) {
+			case 0:
+				osName = "Windows 10";
+			default:
+				break;
+			}
+			break;
+		default:
+			break;
 		}
 
 		if (osName) {
@@ -865,7 +880,7 @@ void HoldPacketBlock(__in BLOCK_NODE *blockNode)
 	KLOCK_QUEUE_HANDLE  lockHandle;
 
 	DBGPRINT(D_INFO, "Holding packet block for connection %08X",
-			blockNode->PrimaryId);
+			blockNode->ConnectionId);
 
 	DBGPRINT(D_LOCK, "Acquiring trees lock at %d", __LINE__);
 	KeAcquireInStackQueuedSpinLock(&gTreesLock, &lockHandle);
@@ -947,7 +962,8 @@ void ProcessConnectionCloseEvents(
 		entry = entry->Flink;
 		if (timestamp.QuadPart > (blockNode->Timestamp.QuadPart + 1000)) {
 			// This connection is old enough that we can remove it from the tree
-			DBGPRINT(D_INFO, "Removing closed connection %08X", blockNode->PrimaryId);
+			DBGPRINT(D_INFO, "Removing closed connection %08X",
+					blockNode->ConnectionId);
 			if (LLRB_REMOVE(BlockTree, &gConnTreeHead, blockNode)) {
 				gConnTreeCount--;
 			}
@@ -1069,7 +1085,7 @@ NTSTATUS QmEnqueueConnectionBlock(
 
 	// If connection opened, get the block node, if one already exists
 	// If connection closed, set timer to delete the block node, if one exists
-	searchNode.PrimaryId = connectionId;
+	searchNode.SortId = connectionId;
 	if (opened) {
 		DBGPRINT(D_LOCK, "Acquiring trees lock at %d", __LINE__);
 		KeAcquireInStackQueuedSpinLock(&gTreesLock, &lockHandle);
@@ -1161,9 +1177,11 @@ NTSTATUS QmEnqueuePacketBlock(
 
 		blockLength = sizeof(PCAP_NG_PACKET_HEADER) +
 				PCAP_NG_PADDING(capturedLength) + sizeof(PCAP_NG_PACKET_FOOTER);
-		blockNode->BlockType   = PacketBlock;
-		blockNode->BlockLength = blockLength;
-		blockNode->PrimaryId   = connectionId;
+		blockNode->BlockType    = PacketBlock;
+		blockNode->BlockLength  = blockLength;
+		blockNode->SortId       = connectionId;
+		blockNode->ConnectionId = connectionId;
+		blockNode->ProcessId    = processId;
 		GetTimestamp(&blockNode->Timestamp);
 		buffer = blockNode->Buffer ? blockNode->Buffer : blockNode->Data;
 		header = reinterpret_cast<PCAP_NG_PACKET_HEADER*>(buffer);
@@ -1225,7 +1243,7 @@ NTSTATUS QmEnqueueProcessBlock(
 
 	// If process started, get the block node, if one already exists
 	// If process ended, delete the block node, if one exists
-	searchNode.PrimaryId = pid;
+	searchNode.SortId = pid;
 	if (started) {
 		DBGPRINT(D_LOCK, "Acquiring trees lock at %d", __LINE__);
 		KeAcquireInStackQueuedSpinLock(&gTreesLock, &lockHandle);
@@ -1600,7 +1618,7 @@ void ReleasePacketBlocks(
 	BLOCK_NODE          searchNode;
 	KLOCK_QUEUE_HANDLE  lockHandle;
 
-	searchNode.PrimaryId = connectionId;
+	searchNode.SortId = connectionId;
 	DBGPRINT(D_LOCK, "Acquiring trees lock at %d", __LINE__);
 	KeAcquireInStackQueuedSpinLock(&gTreesLock, &lockHandle);
 
@@ -1627,7 +1645,7 @@ void ReleasePacketBlocks(
 
 			// Release our hold on this block after getting the next block in the list
 			DBGPRINT(D_INFO, "Releasing packet block for connection %08X",
-					blockNode->PrimaryId);
+					blockNode->ConnectionId);
 			previousBlockNode = blockNode;
 			entry             = blockNode->ListEntry.Flink;
 			blockNode         = CONTAINING_RECORD(entry, BLOCK_NODE, ListEntry);

@@ -7,7 +7,7 @@
 <body>
 <h1>Host-Network (Hone) Packet-Process Correlator for Windows</h1>
 
-<p>Copyright &copy; 2014 Battelle Memorial Institute<br />
+<p>Copyright &copy; 2014-2015 Battelle Memorial Institute<br />
 Licensed under a modification of the 3-clause BSD license<br />
 See <a href="License.txt">License.txt</a> for the full text of the license and additional disclaimers</p>
 
@@ -418,6 +418,7 @@ not zero, then the driver is leaking memory. The following table shows how the d
 <tr><td>HoQp</td><td>Queue manager  </td><td>Process block buffers              </td></tr>
 <tr><td>HoQr</td><td>Queue manager  </td><td>Ring buffer                        </td></tr>
 <tr><td>HoQs</td><td>Queue manager  </td><td>Section header block buffers       </td></tr>
+<tr><td>HoRi</td><td>Read interface </td><td>ID lists                           </td></tr>
 <tr><td>HoRl</td><td>Read interface </td><td>Lookaside list                     </td></tr>
 </table>
 
@@ -494,11 +495,18 @@ number of simultaneous readers.</p>
 		<td>None</td>
 	</tr>
 	<tr>
-		<td>IOCTL_HONE_FILTER_CONNECTION</td>
-		<td>Tells the driver to filter all packets for the specified connection ID. Filtering is done on a per-reader basis, so each
-			reader can filter packets for a different connection ID. Since the driver expects a connection ID rather than a socket,
+		<td>IOCTL_HONE_FILTER_CONNECTIONS</td>
+		<td>Tells the driver to filter all packets for the specified connection IDs. Filtering is done on a per-reader basis, so each
+			reader can filter packets for different connection IDs. Since the driver expects a connection ID rather than a socket,
 			programs can use the SIO_QUERY_WFP_ALE_ENDPOINT_HANDLE Windows Socket API IOCTL to get the connection ID.</td>
-		<td>32-bit connection ID</td>
+		<td>Array of 32-bit connection IDs</td>
+		<td>None</td>
+	</tr>
+	<tr>
+		<td>IOCTL_HONE_FILTER_PROCESSES</td>
+		<td>Tells the driver to filter all packets for the specified process IDs. Filtering is done on a per-reader basis, so each
+			reader can filter packets for different process IDs.</td>
+		<td>Array of 32-bit process IDs</td>
 		<td>None</td>
 	</tr>
 	<tr>

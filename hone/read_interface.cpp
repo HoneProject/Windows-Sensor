@@ -2,7 +2,7 @@
 // Provides an interface for userspace programs to read PCAP-NG blocks
 // collected by the Hone driver
 //
-// Copyright (c) 2014 Battelle Memorial Institute
+// Copyright (c) 2014-2015 Battelle Memorial Institute
 // Licensed under a modification of the 3-clause BSD license
 // See License.txt for the full text of the license and additional disclaimers
 //
@@ -27,10 +27,12 @@ extern "C" {
 // Global variables
 //----------------------------------------------------------------------------
 
+// These must be in the same order that the IOCTLS are declared
 static const IOCTL_PARAMS gIoctlParams[] =
 {
 	{ 0,              0,     0,              0     }, // IoctlRestart
-	{ sizeof(UINT32), 0,     sizeof(UINT32), 0     }, // IoctlFilterConnection
+	{ 0,              0,     0,              0     }, // IoctlFilterConnections
+	{ 0,              0,     0,              0     }, // IoctlFilterProcesses
 	{ sizeof(UINT32), 0,     sizeof(UINT32), 0     }, // IoctlSetSnapLength
 	{ 0, sizeof(UINT32),     0, sizeof(UINT32)     }, // IoctlGetSnapLength
 	{ sizeof(UINT32), 0,     sizeof(UINT64), 0     }, // IoctlSetDataEvent
@@ -40,6 +42,7 @@ static const IOCTL_PARAMS gIoctlParams[] =
 
 static LOOKASIDE_LIST_EX gLookasideList;              // Holds memory for netbuffer storage
 static bool              gLookasideListInit = false;  // True if lookaside list was initialized
+static const UINT32      gPoolTagIds        = 'iRoH'; // Tag to use when allocating ID lists
 static const UINT32      gPoolTagLookaside  = 'lRoH'; // Tag to use when allocating lookaside buffers
 
 //----------------------------------------------------------------------------
@@ -79,6 +82,12 @@ NTSTATUS DispatchClose(__in PDEVICE_OBJECT deviceObject, __inout PIRP irp)
 	QmDeregisterReader(&context->Reader);
 	if (context->CurrentBlock) {
 		QmCleanupBlock(context->CurrentBlock);
+	}
+	if (context->FilteredConnectionIds) {
+		ExFreePool(context->FilteredConnectionIds);
+	}
+	if (context->FilteredProcessIds) {
+		ExFreePool(context->FilteredProcessIds);
 	}
 	ExFreeToLookasideListEx(&gLookasideList, context);
 	return CompleteIrp(irp, STATUS_SUCCESS);
@@ -161,6 +170,9 @@ NTSTATUS DispatchDeviceControl(
 		return CompleteIrp(irp, STATUS_INVALID_PARAMETER);
 	}
 
+	DBGPRINT(D_INFO, "Received IOCTL %08X: input len %08X, output len %08X",
+			ioctl, inBufLen, outBufLen);
+
 	// Check buffer sizes
 	if (function > ARRAY_SIZEOF(gIoctlParams)) {
 		return CompleteIrp(irp, STATUS_INVALID_DEVICE_REQUEST);
@@ -180,11 +192,11 @@ NTSTATUS DispatchDeviceControl(
 	}
 
 	switch (irpSp->Parameters.DeviceIoControl.IoControlCode) {
-	case IOCTL_HONE_FILTER_CONNECTION:
-		context->FilteredConnectionId = *reinterpret_cast<const UINT32*>(buffer);
-		DBGPRINT(D_INFO, "Filtering connection %08X (%d) for reader %d",
-				context->FilteredConnectionId, context->FilteredConnectionId,
-				context->Reader.Id);
+	case IOCTL_HONE_FILTER_CONNECTIONS:
+		SetIdList(context, ConnectionIdList, buffer, inBufLen);
+		break;
+	case IOCTL_HONE_FILTER_PROCESSES:
+		SetIdList(context, ProcessIdList, buffer, inBufLen);
 		break;
 	case IOCTL_HONE_MARK_RESTART:
 		context->RestartRequested = 1;
@@ -313,10 +325,35 @@ NTSTATUS DispatchRead(
 			if (blockNode->BlockType == PacketBlock) {
 				PCAP_NG_PACKET_HEADER *header;
 
-				// Skip this block if filtering the connection ID
-				if (context->FilteredConnectionId == blockNode->PrimaryId) {
-					DBGPRINT(D_INFO, "Read %08X/%08X: Filtering packet for connection %08X",
-							readOffset, readLength, blockNode->PrimaryId);
+				// Filter this block if filtering the connection or process ID
+				bool filter = false;
+				if (context->FilteredProcessIds) {
+					for (UINT32 index = 1; index <= context->FilteredProcessIds[0]; index++) {
+						DBGPRINT(D_DBG, "Checking filter %d of %d: block process ID %d (%08X), filter process ID %d (%08X)",
+								index, context->FilteredProcessIds[0],
+								blockNode->ProcessId, blockNode->ProcessId,
+								context->FilteredProcessIds[index], context->FilteredProcessIds[index]);
+						if (context->FilteredProcessIds[index] == blockNode->ProcessId) {
+							filter = true;
+							break;
+						}
+					}
+				}
+				if (!filter && context->FilteredConnectionIds) {
+					for (UINT32 index = 1; index <= context->FilteredConnectionIds[0]; index++) {
+						DBGPRINT(D_DBG, "Checking filter %d of %d: block connection ID %d (%08X), filter connection ID %d (%08X)",
+								index, context->FilteredConnectionIds[0],
+								blockNode->ConnectionId, blockNode->ConnectionId,
+								context->FilteredConnectionIds[index], context->FilteredConnectionIds[index]);
+						if (context->FilteredConnectionIds[index] == blockNode->ConnectionId) {
+							filter = true;
+							break;
+						}
+					}
+				}
+				if (filter) {
+					DBGPRINT(D_INFO, "Filtering packet for process %08X, connection %08X",
+							blockNode->ProcessId, blockNode->ConnectionId);
 					QmCleanupBlock(blockNode);
 					blockNode = NULL;
 					continue;
@@ -439,6 +476,46 @@ NTSTATUS InitializeReadInterface(DEVICE_OBJECT *device)
 	}
 	gLookasideListInit = true;
 	return STATUS_SUCCESS;
+}
+
+//----------------------------------------------------------------------------
+void SetIdList(
+		READER_CONTEXT     *context,
+		const ID_LIST_TYPE  idListType,
+		const void         *buffer,
+		const UINT32        bufferLen)
+{
+	const char  *label;
+	const char  *labelPs;
+	void       **target;
+	if (idListType == ConnectionIdList) {
+		label = "connection";
+		labelPs = "connection(s)";
+		target = reinterpret_cast<void**>(&context->FilteredConnectionIds);
+	} else {
+		label = "process";
+		labelPs = "process(es)";
+		target = reinterpret_cast<void**>(&context->FilteredProcessIds);
+	}
+
+	UINT32       *ids    = NULL;
+	const UINT32  numIds = bufferLen / sizeof(UINT32);
+	DBGPRINT(D_INFO, "Filtering %d %s for reader %d", numIds, labelPs, context->Reader.Id);
+	if (numIds) {
+		ids = reinterpret_cast<UINT32*>(ExAllocatePoolWithTag(NonPagedPool, (numIds + 1) * sizeof(UINT32), gPoolTagIds));
+		ids[0] = numIds;
+		const UINT32 *newIds = reinterpret_cast<const UINT32*>(buffer);
+		for (UINT32 index = 0; index < numIds; index++) {
+			const UINT32 id = newIds[index];
+			DBGPRINT(D_INFO, "Filtering %s %08X (%d) for reader %d", label, id, id, context->Reader.Id);
+			ids[index + 1] = id;
+		}
+	}
+
+	UINT32 *currentIds = reinterpret_cast<UINT32*>(InterlockedExchangePointer(target, ids));
+	if (currentIds) {
+		ExFreePool(currentIds);
+	}
 }
 
 #ifdef __cplusplus

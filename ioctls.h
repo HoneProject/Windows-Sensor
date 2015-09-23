@@ -1,7 +1,7 @@
 //----------------------------------------------------------------------------
 // IOCTLs supported by the Hone driver
 //
-// Copyright (c) 2014 Battelle Memorial Institute
+// Copyright (c) 2014-2015 Battelle Memorial Institute
 // Licensed under a modification of the 3-clause BSD license
 // See License.txt for the full text of the license and additional disclaimers
 //
@@ -30,7 +30,8 @@ extern "C" {
 // IOCTL function codes
 enum IOCTL_FUNCTIONS {
 	IoctlRestart,
-	IoctlFilterConnection,
+	IoctlFilterConnections,
+	IoctlFilterProcesses,
 	IoctlSetSnapLength,
 	IoctlGetSnapLength,
 	IoctlSetDataEvent,
@@ -101,17 +102,29 @@ struct STATISTICS {
 #define IOCTL_HONE_MARK_RESTART CTL_CODE(FILE_DEVICE_UNKNOWN, IoctlFlag | \
 	IoctlRestart, METHOD_NEITHER, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
 
-/// @brief Registers a connection ID to filter packet blocks for
+/// @brief Registers connection IDs to filter packet blocks for
 ///
-/// * The reader passes the ID of the connection to filter in the buffer, which
-///   must be at least 4 bytes in length
-/// * A connection ID of 0 disables filtering
+/// * The reader passes a list of 32-bit connection IDs to filter in the buffer
+/// * An empty list disables connection ID filtering
 /// * Read operations will not return any packet block that has the filtered
 ///   connection ID
 /// * Filtered IDs are on a per-reader basis, so different readers can filter
 ///   blocks for different IDs
-#define IOCTL_HONE_FILTER_CONNECTION CTL_CODE(FILE_DEVICE_UNKNOWN, IoctlFlag | \
-	IoctlFilterConnection, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
+/// * Readers can use the SIO_QUERY_WFP_ALE_ENDPOINT_HANDLE Windows Socket API
+///   IOCTL to get the connection ID for a socket
+#define IOCTL_HONE_FILTER_CONNECTIONS CTL_CODE(FILE_DEVICE_UNKNOWN, IoctlFlag | \
+	IoctlFilterConnections, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
+
+/// @brief Registers process IDs to filter packet blocks for
+///
+/// * The reader passes a list of 32-bit process IDs to filter in the buffer
+/// * An empty list disables process ID filtering
+/// * Read operations will not return any packet block that has the filtered
+///   process ID
+/// * Filtered IDs are on a per-reader basis, so different readers can filter
+///   blocks for different IDs
+#define IOCTL_HONE_FILTER_PROCESSES CTL_CODE(FILE_DEVICE_UNKNOWN, IoctlFlag | \
+	IoctlFilterProcesses, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
 
 /// @brief Sets the amount of data captured from packets (the snap length)
 ///

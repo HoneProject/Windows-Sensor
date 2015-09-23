@@ -50,20 +50,21 @@ struct DEVICE_EXTENSION {
 // Do not directly access the READER_INFO structure, since it is managed by
 // the queue manager
 struct READER_CONTEXT {
-	DEVICE_EXTENSION      *DeviceExtension;      // Device that owns this instance
-	READER_INFO            Reader;               // Reader's registration information
-	RESTART_STATE          RestartState;         // Normal or restarting
-	LONG                   RestartRequested;     // Non-zero if reader requested a restart
-	BLOCK_NODE            *CurrentBlock;         // PCAP-NG block currently being read
-	UINT32                 CurrentBlockOffset;   // Offset into current PCAP-NG block
-	UINT32                 FilteredConnectionId; // ID of connection being filtered (0 if none)
-	UINT32                 SnapLength;           // Number of bytes to capture (0 or 0xFFFFFFFF for unlimited)
-	UINT32                 SnapLengthPad;        // Bytes of padding needed based on snap length
-	PCAP_NG_PACKET_HEADER  ModifiedHeader;       // Modified packet header for truncated blocks
-	PCAP_NG_PACKET_FOOTER  ModifiedFooter;       // Modified packet footer for truncated blocks
-	UINT32                 DataEndOffset;        // Offset to end of unpadded data
-	UINT32                 ModifiedFooterOffset; // Offset to start of modified packet footer
-	UINT32                 OriginalFooterOffset; // Offset to start of original packet footer
+	DEVICE_EXTENSION      *DeviceExtension;       // Device that owns this instance
+	READER_INFO            Reader;                // Reader's registration information
+	RESTART_STATE          RestartState;          // Normal or restarting
+	LONG                   RestartRequested;      // Non-zero if reader requested a restart
+	BLOCK_NODE            *CurrentBlock;          // PCAP-NG block currently being read
+	UINT32                 CurrentBlockOffset;    // Offset into current PCAP-NG block
+	UINT32                *FilteredConnectionIds; // List of connection IDs being filtered (NULL if none)
+	UINT32                *FilteredProcessIds;    // List of processes IDs being filtered (NULL if none)
+	UINT32                 SnapLength;            // Number of bytes to capture (0 or 0xFFFFFFFF for unlimited)
+	UINT32                 SnapLengthPad;         // Bytes of padding needed based on snap length
+	PCAP_NG_PACKET_HEADER  ModifiedHeader;        // Modified packet header for truncated blocks
+	PCAP_NG_PACKET_FOOTER  ModifiedFooter;        // Modified packet footer for truncated blocks
+	UINT32                 DataEndOffset;         // Offset to end of unpadded data
+	UINT32                 ModifiedFooterOffset;  // Offset to start of modified packet footer
+	UINT32                 OriginalFooterOffset;  // Offset to start of original packet footer
 };
 
 struct IOCTL_PARAMS {
@@ -73,9 +74,29 @@ struct IOCTL_PARAMS {
 	UINT8  OutputLength64;
 };
 
+enum ID_LIST_TYPE {
+	ConnectionIdList, // List of connection IDs
+	ProcessIdList,    // List of process IDs
+};
+
 //----------------------------------------------------------------------------
 // Function prototypes
 //----------------------------------------------------------------------------
+
+//----------------------------------------------------------------------------
+/// @brief Sets a new connection or process ID list in the reader context
+/// structure
+///
+/// @brief context     Reader context
+/// @brief idListType  Type of ID list to set
+/// @brief buffer      Buffer that holds the ID list
+/// @brief bufferLen   Length in bytes of buffer that holds the ID list
+
+void SetIdList(
+		READER_CONTEXT     *context,
+		const ID_LIST_TYPE  idListType,
+		const void         *buffer,
+		const UINT32        bufferLen);
 
 #ifdef __cplusplus
 };
